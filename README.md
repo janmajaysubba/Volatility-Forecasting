@@ -108,7 +108,6 @@ vol_forecasting/
 │   └── results_summary.csv              # 6-model × 3-metric aggregated summary (folds 1–12)
 ├── Historical_Prices_ETC_SPY_2026-04-28.json  # Source data (Godel Terminal export)
 ├── requirements.txt
-├── vol_forecasting_spec.md              # Full project specification
 └── README.md
 ```
 
