@@ -1,14 +1,14 @@
 # Volatility-Forecasting
 
 A daily 1-day-ahead volatility forecasting system for SPY (S&P 500 ETF) covering 2008–2026,
-comparing classical econometric baselines against modern ML approaches using a rigorous
+comparing classical econometric baselines against modern ML approaches using 
 walk-forward out-of-sample evaluation framework.
 
 **Core research question:** Can ML models with engineered features beat classical volatility
 benchmarks (HAR-RV, GARCH) on out-of-sample SPY daily volatility forecasts?
 
 **Short answer:** No — GARCH(1,1) wins on the primary QLIKE metric. XGBoost comes closest
-on log-MSE. Ridge and Lasso fail catastrophically due to target-space sensitivity.
+out of all the ML models and is competitive across all three metrics used.
 
 ---
 
@@ -38,7 +38,7 @@ This project implements a full volatility forecasting pipeline for SPY daily ret
 - Engineers 22 strictly causal features with automated no-lookahead validation
 - Trains 6 models across 13 annual walk-forward folds (~3,000 out-of-sample predictions per model)
 - Evaluates with QLIKE, MSE on log-variance, and MAE on volatility
-- Saves per-fold predictions, loss summaries, and diagnostic figures
+- Saves per-fold predictions and loss summaries
 
 Everything is fully reproducible: global `seed=22`, all splits respect temporal order, and
 hyperparameter search is nested within each training fold.
@@ -47,37 +47,38 @@ hyperparameter search is nested within each training fold.
 
 ## Results
 
+Evaluated on 12 complete calendar-year folds (2014–2025), ~3,000 out-of-sample predictions
+per model. Fold 13 (Jan–Apr 2026, 79 trading days) is excluded from the summary — it is a
+partial year and its extreme QLIKE values would distort cross-fold averages. Per-fold detail
+for all 13 folds is saved in `results/per_fold_losses.csv`.
+
 ### Summary Table
 
 | Model | QLIKE (↓) | QLIKE Std | MSE-log (↓) | MSE-log Std | MAE-vol (↓) | MAE-vol Std |
 |---|---|---|---|---|---|---|
-| **GARCH(1,1)** | **69.64** | 249.18 | 1.338 | 0.473 | **0.00546** | 0.00660 |
-| HAR-RV | 74.79 | 266.41 | 6.008 | 16.600 | 0.267 | 0.946 |
-| SVR (RBF) | 78.24 | 279.89 | 1.180 | 1.019 | 0.00537 | 0.00809 |
-| XGBoost | 83.95 | 300.63 | **1.038** | 0.523 | **0.00491** | 0.00678 |
-| Ridge | 25,917 | 93,445 | 13.131 | 43.925 | 0.633 | 2.271 |
-| Lasso | 25,918 | 93,445 | 13.131 | 43.925 | 0.633 | 2.271 |
+| **GARCH(1,1)** | **0.533** | 0.118 | 1.223 | 0.384 | 0.00366 | 0.00119 |
+| XGBoost | 0.569 | 0.206 | **0.899** | 0.145 | **0.00306** | 0.00134 |
+| Lasso | 0.596 | 0.203 | 0.949 | 0.152 | 0.00327 | 0.00152 |
+| Ridge | 0.596 | 0.204 | 0.948 | 0.152 | 0.00328 | 0.00153 |
+| SVR (RBF) | 0.616 | 0.268 | 0.901 | 0.153 | 0.00316 | 0.00153 |
+| HAR-RV | 0.903 | 0.483 | 1.405 | 0.456 | 0.00464 | 0.00469 |
 
-All metrics averaged across 13 folds. Scores reported on variance (not log) scale.
+All metrics averaged across folds 1–12 (complete calendar years). Scores on variance scale.
 
 ### Key Findings
 
 - **GARCH(1,1) is the best overall model** on the primary QLIKE metric, reinforcing that
   volatility clustering is well-captured by a simple ARCH recursion.
-- **XGBoost achieves the lowest MSE-log** (1.038), beating GARCH (1.338) and all others
-  on that metric.
-- **SVR (RBF) is the best ML model on QLIKE** (78.24), though it still trails GARCH.
-- **Ridge and Lasso fail spectacularly** (QLIKE > 25,000), driven by QLIKE's extreme
-  sensitivity to underprediction when predictions in log-space go far negative in tail folds.
-- **ML did not beat classical baselines** on QLIKE — in line with the broader empirical
+- **XGBoost is the strongest ML model**, achieving the lowest MSE-log and MAE-vol and
+  coming closest to GARCH on QLIKE.
+- **Ridge and Lasso perform comparably** and sit in the middle of the pack — regularized
+  linear models capture the signal but cannot match the non-linear structure XGBoost learns.
+- **SVR is competitive on MSE-log and MAE-vol** but trails on QLIKE, suggesting it is
+  more sensitive to underprediction in high-volatility regimes.
+- **HAR-RV is the weakest model** on all three metrics despite using only three lagged
+  volatility features, suggesting the additional 19 engineered features add measurable value.
+- **ML did not beat the classical baseline on QLIKE** — consistent with the broader empirical
   finance literature on the robustness of GARCH-family models.
-
-### Figures
-
-| Figure | Description |
-|---|---|
-| `results/figures/qlike_per_fold.png` | Per-fold QLIKE for all 6 models (2014–2026) |
-| `results/figures/predicted_vs_actual_covid.png` | Fold 7 (2020) COVID stress test — all model predictions vs actual YZ vol |
 
 ---
 
@@ -103,11 +104,8 @@ vol_forecasting/
 │   └── run_pipeline.py                   # Full end-to-end pipeline driver
 ├── results/
 │   ├── predictions/                      # 78 parquets: {model}_fold{n}.parquet
-│   ├── figures/
-│   │   ├── qlike_per_fold.png
-│   │   └── predicted_vs_actual_covid.png
 │   ├── per_fold_losses.csv               # 78 rows × 8 cols (fold × model × metrics)
-│   └── results_summary.csv              # 6-model × 3-metric aggregated summary
+│   └── results_summary.csv              # 6-model × 3-metric aggregated summary (folds 1–12)
 ├── Historical_Prices_ETC_SPY_2026-04-28.json  # Source data (Godel Terminal export)
 ├── requirements.txt
 ├── vol_forecasting_spec.md              # Full project specification
@@ -258,25 +256,26 @@ Generalized Autoregressive Conditional Heteroskedasticity (Bollerslev, 1986).
 
 **Protocol:** Expanding-window, annual test folds. Implemented in `src/validation.py`.
 
-- **Initial training window:** 2008-01-01 through 2013-12-31 (~1,500 trading days)
+- **Initial training window:** 2008-04-09 through 2013-12-31 (~1,453 trading days)
 - **Test folds:** Annual from 2014 through April 2026 (13 folds total)
-- **Total out-of-sample observations:** ~3,000 per model
+- **Reported results:** Folds 1–12 only (complete calendar years, 2014–2025)
+- **Total out-of-sample observations:** ~3,000 per model (folds 1–12)
 
 | Fold | Train Window | Test Window | approx. n_train | approx. n_test |
 |---|---|---|---|---|
-| 1 | 2008-01-01 .. 2013-12-31 | 2014 | 1,500 | 253 |
-| 2 | 2008-01-01 .. 2014-12-31 | 2015 | 1,753 | 252 |
-| 3 | 2008-01-01 .. 2015-12-31 | 2016 | 2,005 | 252 |
-| 4 | 2008-01-01 .. 2016-12-31 | 2017 | 2,257 | 251 |
-| 5 | 2008-01-01 .. 2017-12-31 | 2018 | 2,508 | 251 |
-| 6 | 2008-01-01 .. 2018-12-31 | 2019 | 2,759 | 252 |
-| 7 | 2008-01-01 .. 2019-12-31 | 2020 | 3,011 | 253 |
-| 8 | 2008-01-01 .. 2020-12-31 | 2021 | 3,264 | 252 |
-| 9 | 2008-01-01 .. 2021-12-31 | 2022 | 3,516 | 251 |
-| 10 | 2008-01-01 .. 2022-12-31 | 2023 | 3,767 | 250 |
-| 11 | 2008-01-01 .. 2023-12-31 | 2024 | 4,017 | 252 |
-| 12 | 2008-01-01 .. 2024-12-31 | 2025 | 4,269 | 252 |
-| 13 | 2008-01-01 .. 2025-12-31 | Jan–Apr 2026 | 4,521 | ~80 |
+| 1 | 2008-04-09 .. 2013-12-31 | 2014 | 1,453 | 253 |
+| 2 | 2008-04-09 .. 2014-12-31 | 2015 | 1,706 | 252 |
+| 3 | 2008-04-09 .. 2015-12-31 | 2016 | 1,958 | 252 |
+| 4 | 2008-04-09 .. 2016-12-31 | 2017 | 2,210 | 251 |
+| 5 | 2008-04-09 .. 2017-12-31 | 2018 | 2,461 | 251 |
+| 6 | 2008-04-09 .. 2018-12-31 | 2019 | 2,712 | 252 |
+| 7 | 2008-04-09 .. 2019-12-31 | 2020 | 2,964 | 253 |
+| 8 | 2008-04-09 .. 2020-12-31 | 2021 | 3,217 | 252 |
+| 9 | 2008-04-09 .. 2021-12-31 | 2022 | 3,469 | 251 |
+| 10 | 2008-04-09 .. 2022-12-31 | 2023 | 3,720 | 250 |
+| 11 | 2008-04-09 .. 2023-12-31 | 2024 | 3,970 | 252 |
+| 12 | 2008-04-09 .. 2024-12-31 | 2025 | 4,222 | 250 |
+| 13 | 2008-04-09 .. 2025-12-31 | Jan–Apr 2026 | 4,472 | 79 *(excluded from summary)* |
 
 **Critical design decisions:**
 - Hyperparameter tuning is nested entirely within each fold's training window — the test fold
@@ -292,7 +291,7 @@ Generalized Autoregressive Conditional Heteroskedasticity (Bollerslev, 1986).
 All metrics operate on **variance** (not log-variance, not volatility). Implemented in `src/metrics.py`.
 
 Predictions are clipped to `[-25, 5]` in log-space before exponentiation as a numerical
-safety guard against extreme outliers in early folds.
+safety guard against extreme values.
 
 ### QLIKE (Primary Metric)
 
@@ -301,8 +300,7 @@ QLIKE = mean( σ²_true / σ²_pred − log(σ²_true / σ²_pred) − 1 )
 ```
 
 The standard loss function for volatility forecast evaluation (Patton, 2011). Robust to
-noisy volatility proxies. Severely penalizes underprediction, which is why Ridge/Lasso
-fail when they predict near-zero variance in tail regimes.
+noisy volatility proxies. Asymmetrically penalizes underprediction more than overprediction.
 
 ### MSE on Log-Variance (Secondary)
 
@@ -310,7 +308,7 @@ fail when they predict near-zero variance in tail regimes.
 MSE_log = mean( (log σ²_true − log σ²_pred)² )
 ```
 
-Standard regression loss in log-space. More symmetric than QLIKE; used to compare models
+Standard regression loss in log-space. More symmetric than QLIKE; useful for comparing models
 that differ in tail behavior.
 
 ### MAE on Volatility (Tertiary)
@@ -319,8 +317,8 @@ that differ in tail behavior.
 MAE_vol = mean( |σ_true − σ_pred| )
 ```
 
-Most interpretable metric — units are annualized vol points. Useful for translating
-forecast accuracy into practical sizing terms.
+Most interpretable metric — units are daily vol points. Useful for translating forecast
+accuracy into practical terms.
 
 ### Diebold-Mariano Test
 
@@ -361,11 +359,10 @@ python scripts/run_pipeline.py
 2. Build feature matrix → `data/processed/spy_features.parquet`
 3. Walk-forward validation loop (6 models × 13 folds)
 4. Write per-fold predictions → `results/predictions/{model}_fold{n}.parquet`
-5. Aggregate losses → `results/per_fold_losses.csv`, `results/results_summary.csv`
-6. Render figures → `results/figures/qlike_per_fold.png`, `results/figures/predicted_vs_actual_covid.png`
+5. Aggregate losses → `results/per_fold_losses.csv` (all 13 folds), `results/results_summary.csv` (folds 1–12)
 
-All random state is seeded via `SEED = 22` in `src/__init__.py`. Results should be
-bit-for-bit reproducible across runs on the same hardware/library versions.
+All random state is seeded via `SEED = 22` in `src/__init__.py`. Results are fully
+reproducible across runs on the same hardware and library versions.
 
 ---
 
